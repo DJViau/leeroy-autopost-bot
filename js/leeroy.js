@@ -34,11 +34,10 @@ w3.eth.getTransactionCount(CONFIG.eth.address).then((txCount, err) => {
   //   txParams
   // )
 
-	// NOTE: currently posting empty tweets
 	let rawTx = txutils.functionTx(
 		CONFIG.leeroy.abi,
 		'post',
-		'hello world',
+		[JSON.stringify({text: "Hello World!"})],
 		txParams
 	)
 
