@@ -1,64 +1,75 @@
-require('./setup')
 
-// sanity check that private key corresponds to eth address
-if (
-  ethAcct.address !== CONFIG.eth.address ||
-  ethAcct.privateKey !== CONFIG.eth.privateKey
-) {
-  throw new Error(`${timestamp()} address & privatekey dont match!`)
-} else {
-  console.log(`${timestamp()} address & privatekey match!`)
+// postToLeeroy('testPost')
+
+async function postToLeeroy(postStr) {
+	try {
+
+		let gasPrice = await fetch('https://ethgasstation.info/json/ethgasAPI.json').then(r => r.json()).then(d => d.safeLow*100000000)
+		let txCount = await w3.eth.getTransactionCount(CONFIG.eth.address)
+
+		let txParams = assembleTxParams(txCount, gasPrice)
+		let rawLeeroyPostTx = assembleRawPostTx(postStr, txParams)
+		let tx = new EthereumTx(rawLeeroyPostTx)
+		let pkBuf = Buffer(CONFIG.eth.privateKey.slice(2), 'hex')
+
+		tx.sign(pkBuf)
+
+		let signedSerializedTx = tx.serialize().toString('hex')
+
+		await w3.eth.sendSignedTransaction(`0x${signedSerializedTx}`)
+
+	} catch (e) {
+		handlePostingErrors(e)
+	} finally {
+		console.log(`${timestamp()} postToLeeroy finally`)
+		return
+	}
 }
 
-// might not be necessary
-w3.eth.accounts.wallet.add(ethAcct)
 
-w3.eth.getTransactionCount(CONFIG.eth.address).then((txCount, err) => {
+function assembleTxParams(txCount, gasPrice) {
+	return {
+		nonce: w3.utils.toHex(txCount),
+		// NOTE: gasLimit range seems to be 35k - 49K, investigate setting dynamically
+		gasLimit: w3.utils.toHex(480000),
+		gasPrice: w3.utils.toHex(gasPrice),
+		to: CONFIG.leeroy.contractAddress,
+		chainId: 1
+	}
+}
 
-  console.log(`${timestamp()} ${txCount} transactions for ${CONFIG.eth.address}`)
 
-  let txParams = {
-    nonce: w3.utils.toHex(txCount),
-    gasLimit: w3.utils.toHex(500000),
-    gasPrice: w3.utils.toHex(1000000000), // 1 gwei
-    to: CONFIG.leeroy.contractAddress,
-    chainId: 1
-  }
-
-  // let leeroyTestUserName = `leeroyTestBot${(Math.random() * 100000).toFixed(0)}`
-  // console.log(`${timestamp()} attemtping to create ${leeroyTestUserName}`)
-  // let rawTx = txutils.functionTx(
-  //   CONFIG.leeroy.abi,
-  //   'registerUsername',
-  //   leeroyTestUserName,
-  //   txParams
-  // )
-
-	let rawTx = txutils.functionTx(
+function assembleRawPostTx(postStr, txParams) {
+	return txutils.functionTx(
 		CONFIG.leeroy.abi,
 		'post',
-		[JSON.stringify({text: "Hello World!"})],
+		[JSON.stringify({text: postStr})],
 		txParams
 	)
-
-  let tx = new EthereumTx(rawTx)
-
-  let privateKeyBuffer = Buffer(CONFIG.eth.privateKey.slice(2), 'hex')
-
-  tx.sign(privateKeyBuffer)
-
-  let serializedTx = tx.serialize().toString('hex')
-
-	// NOTE: even when successful, getting following error (way before 50 blocks is reached)
-	// Unhandled rejection Error: Transaction was not mined within 50 blocks, please make sure your transaction was properly send. Be aware that it might still be mined!
-  w3.eth.sendSignedTransaction(`0x${serializedTx}`, loggingCallback)
-})
-
-function loggingCallback(e, r) {
-	if (e) {
-		console.log(e)
-	}
-	else {
-		console.log(r)
-	}
 }
+
+// function assembleRawSignupTx(postStr, txParams) {
+// 	return txutils.functionTx(
+// 		CONFIG.leeroy.abi,
+// 		'registerUsername',
+// 		[JSON.stringify({text: postStr})],
+// 		txParams
+// 	)
+// }
+
+function handlePostingErrors(e) {
+	console.log('*******')
+	console.log(`${timestamp()} ${e.message}`)
+	if (e.message === 'Returned error: insufficient funds for gas * price + value') {
+		console.log('account needs refilling or gasprice needs adjustment')
+		// handleInsufficientGasAndRetry?()
+	}
+	if (e.message === 'Transaction was not mined within 50 blocks, please make sure your transaction was properly send. Be aware that it might still be mined!') {
+		console.log('post prob succeeded, but maybe not?')
+		// transactionProbablySucceeded?()
+	}
+	console.log('*******')
+}
+
+
+module.exports = postToLeeroy;
